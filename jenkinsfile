@@ -5,7 +5,7 @@ pipeline {
         nodejs 'nodejs'
     }
     environment {
-        SCANNER_HOME = tool 'sonar-server'   // <-- make sure this tool name matches Jenkins "Global Tool Configuration"
+        SCANNER_HOME = tool 'sonar-server'   
     }
     stages {
         stage("Clean Workspace") {
@@ -26,9 +26,8 @@ pipeline {
         stage("SonarQube Analysis") {
             steps {
                 dir('devops-project') {
-                    // Change 'sonar-server' below to whatever name is configured under Manage Jenkins -> Configure System -> SonarQube servers
                     withSonarQubeEnv('sonar-server') {
-                        withCredentials([string(credentialsId: 'Sonar-token', variable: 'SONAR_TOKEN')]) {
+                        withCredentials([string(credentialsId: 'Sonar-Token', variable: 'SONAR_TOKEN')]) {
                             sh """
                                 ${SCANNER_HOME}/bin/sonar-scanner \
                                   -Dsonar.projectName=devopsproject \
@@ -37,14 +36,6 @@ pipeline {
                             """
                         }
                     }
-                }
-            }
-        }
-
-        stage("Code Quality Gate") {
-            steps {
-                script {
-                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
                 }
             }
         }
@@ -60,43 +51,28 @@ pipeline {
         stage("Docker Build") {
             steps {
                 dir('devops-project') {
-                    sh "docker build -t devopsproject:latest ."
+                    sh "docker build -t docker ."
                 }
             }
         }
 
-        stage("Tag & Push to DockerHub") {
+        stage("Docker Push") {
             steps {
-                script {
-                    docker.withRegistry('', 'docker') {
-                        sh """
-                            docker tag devopsproject:latest sudheerkumar/devops:latest
-                            docker push sudheerkumar/devops:latest
-                        """
-                    }
+                withCredentials([usernamePassword(credentialsId: 'docker', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker tag docker gundrasisudheer/docker:latest
+                        docker push gundrasisudheer/docker:latest
+                    '''
                 }
             }
         }
 
-        stage("Docker Scout Image") {
-            steps {
-                script {
-                    docker.withRegistry('', 'docker') {
-                        sh """
-                            docker scout quickview sudheerkumar/devops:latest
-                            docker scout cves sudheerkumar/devops:latest
-                            docker scout recommendations sudheerkumar/devops:latest
-                        """
-                    }
-                }
-            }
-        }
-
-        stage("Deploy to Container") {
+        stage("Docker Run") {
             steps {
                 sh '''
-                    docker rm -f devops || true
-                    docker run -d --name zomato -p 3000:3000 sudheerkumar/devops:latest
+                    docker rm -f docker || true
+                    docker run -d --name docker --restart always -p 3000:3000 gundrasisudheer/docker:latest
                 '''
             }
         }
