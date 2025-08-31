@@ -5,33 +5,36 @@ pipeline {
         nodejs 'node23'
     }
     environment {
-        SCANNER_HOME=tool 'sonar-scanner'
+        SCANNER_HOME = tool 'sonar-scanner'
     }
     stages {
-        stage ("clean workspace") {
+        stage("Clean Workspace") {
             steps {
                 cleanWs()
             }
         }
-        stage ("Git Checkout") {
+        stage("Git Checkout") {
             steps {
-                git 'https://github.com/sudheergundrasi/devops-project.git'
+                git branch: 'test-project', url: 'https://github.com/sudheergundrasi/devops-project.git'
             }
         }
-        stage("Sonarqube Analysis"){
-            steps{
+        stage("Sonarqube Analysis") {
+            steps {
                 withSonarQubeEnv('sonar-server') {
-                    sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=devopsproject \
-                    -Dsonar.projectKey=devopsproject '''
+                    sh '''
+                    $SCANNER_HOME/bin/sonar-scanner \
+                      -Dsonar.projectName=devopsproject \
+                      -Dsonar.projectKey=devopsproject
+                    '''
                 }
             }
         }
-        stage("Code Quality Gate"){
-           steps {
+        stage("Code Quality Gate") {
+            steps {
                 script {
-                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token' 
+                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
                 }
-            } 
+            }
         }
         stage("Install NPM Dependencies") {
             steps {
@@ -42,43 +45,46 @@ pipeline {
             steps {
                 dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit -n', odcInstallation: 'DP-Check'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-    }
-}
-        stage ("Trivy File Scan") {
+            }
+        }
+        stage("Trivy File Scan") {
             steps {
                 sh "trivy fs . > trivy.txt"
             }
         }
-        stage ("Build Docker Image") {
+        stage("Build Docker Image") {
             steps {
-                sh "docker build -t docker ."
+                sh "docker build -t devopsproject:latest ."
             }
         }
-        stage ("Tag & Push to DockerHub") {
+        stage("Tag & Push to DockerHub") {
             steps {
                 script {
                     withDockerRegistry(credentialsId: 'docker') {
-                        sh "docker tag docker Sudheerkumar/devops:latest "
-                        sh "docker push Sudheerkumar/devops:latest "
+                        sh "docker tag devopsproject:latest sudheerkumar/devops:latest"
+                        sh "docker push sudheerkumar/devops:latest"
                     }
                 }
             }
         }
-        stage('Docker Scout Image') {
+        stage("Docker Scout Image") {
             steps {
-                script{
-                   withDockerRegistry(credentialsId: 'docker', toolName: 'docker'){
-                       sh 'docker-scout quickview Sudheerkumar/devops:latest'
-                       sh 'docker-scout cves Sudheerkumar/devops:latest'
-                       sh 'docker-scout recommendations Sudheerkumar/devops:latest'
-                   }
+                script {
+                    withDockerRegistry(credentialsId: 'docker') {
+                        sh "docker scout quickview sudheerkumar/devops:latest"
+                        sh "docker scout cves sudheerkumar/devops:latest"
+                        sh "docker scout recommendations sudheerkumar/devops:latest"
+                    }
                 }
             }
         }
-        stage ("Deploy to Container") {
+        stage("Deploy to Container") {
             steps {
-                sh 'docker run -d --name zomato -p 3000:3000 Sudheerkumar/devops:latest'
+                sh '''
+                    docker rm -f zomato || true
+                    docker run -d --name zomato -p 3000:3000 sudheerkumar/devops:latest
+                '''
             }
         }
     }
-   
+}
