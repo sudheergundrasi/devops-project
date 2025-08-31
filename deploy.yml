@@ -1,0 +1,37 @@
+---
+- name: Deploy Docker container
+  hosts: web            # this must match the group name in hosts.ini
+  become: true          # escalate to root if needed (to run Docker commands)
+  tasks:
+
+    - name: Make sure Docker is installed
+      ansible.builtin.yum:
+        name: docker
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Start Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Pull latest image from Docker Hub
+      community.docker.docker_image:
+        name: gundrasisudheer/docker
+        tag: latest
+        source: pull
+
+    - name: Stop old container (if running)
+      community.docker.docker_container:
+        name: docker
+        state: absent
+
+    - name: Run container with updated image
+      community.docker.docker_container:
+        name: docker
+        image: gundrasisudheer/docker:latest
+        state: started
+        restart_policy: always
+        published_ports:
+          - "3000:3000"
